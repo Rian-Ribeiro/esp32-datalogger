@@ -1,0 +1,13 @@
+#pragma once
+
+// WiFi
+#define WIFI_SSID "SUA_REDE_WIFI"
+#define WIFI_PASSWORD "SUA_SENHA_WIFI"
+
+// Backend — IP da máquina rodando o servidor Node.js
+#define SERVER_HOST "192.168.1.100"
+#define SERVER_PORT 3000
+#define API_PATH "/api/data"
+
+// Intervalo de envio (ms)
+#define SEND_INTERVAL_MS 5000

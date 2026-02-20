@@ -1,1 +1,19 @@
-.pio/
+# Credenciais WiFi — NUNCA commitar
+firmware/src/config.h
+
+# PlatformIO
+firmware/.pio/
+firmware/.vscode/
+firmware/*.bin
+
+# Node.js
+backend/node_modules/
+backend/datalogger.sqlite
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Sistema
+.DS_Store
+*.log
