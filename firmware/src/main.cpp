@@ -35,6 +35,12 @@ int      histHead  = 0;   // próxima posição de escrita
 void setupAP() {
     WiFi.mode(WIFI_AP);
 
+    // IP estático do ponto de acesso
+    IPAddress localIP(AP_LOCAL_IP);
+    IPAddress gateway(AP_GATEWAY);
+    IPAddress subnet(AP_SUBNET);
+    WiFi.softAPConfig(localIP, gateway, subnet);
+
     // Serial único: últimos 3 bytes do MAC → 6 chars hex
     uint8_t mac[6];
     WiFi.softAPmacAddress(mac);

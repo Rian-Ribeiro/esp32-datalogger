@@ -1,13 +1,38 @@
 #pragma once
 
-// WiFi
-#define WIFI_SSID "SUA_REDE_WIFI"
-#define WIFI_PASSWORD "SUA_SENHA_WIFI"
+// -----------------------------------------------------------------------
+// Identificação do logger
+// Serial é gerado automaticamente a partir do MAC do chip (único por unidade).
+// Formato final do SSID: LoggerMTZ-XXXXXX  (ex: LoggerMTZ-A4B3C2)
+// -----------------------------------------------------------------------
 
-// Backend — IP da máquina rodando o servidor Node.js
-#define SERVER_HOST "192.168.1.100"
-#define SERVER_PORT 3000
-#define API_PATH "/api/data"
+// Senha do ponto de acesso WiFi
+#define AP_PASSWORD     "mtz1234567"
 
-// Intervalo de envio (ms)
-#define SEND_INTERVAL_MS 5000
+// IP do Access Point
+#define AP_LOCAL_IP     192, 168, 4, 1
+#define AP_GATEWAY      192, 168, 4, 1
+#define AP_SUBNET       255, 255, 255, 0
+
+// -----------------------------------------------------------------------
+// Sensores — pinos
+// -----------------------------------------------------------------------
+#define DHT_PIN         4
+#define VOLTAGE_PIN     34
+#define CURRENT_PIN     35
+
+// -----------------------------------------------------------------------
+// Calibração analógica
+// Ajuste com multímetro após montagem em campo
+// -----------------------------------------------------------------------
+#define VOLTAGE_SCALE   0.1f   // V por unidade ADC (RMS)
+#define CURRENT_SCALE   0.05f  // A por unidade ADC (RMS)
+#define SAMPLE_WINDOW   100    // ms de amostragem para cálculo RMS
+
+// -----------------------------------------------------------------------
+// Leitura e armazenamento
+// -----------------------------------------------------------------------
+#define READ_INTERVAL   5000   // ms entre leituras dos sensores
+#define MAX_HISTORY     200    // leituras mantidas em RAM (circular buffer)
+#define DATA_FILE       "/data.jsonl"
+#define MAX_FILE_KB     200    // tamanho máximo do arquivo em LittleFS (KB)
