@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>LoggerMTZ</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0d0d1a;color:#ccc;font:15px/1.5 system-ui,sans-serif;padding:14px;max-width:700px;margin:0 auto}
+
+header{display:flex;align-items:center;gap:10px;margin-bottom:18px;padding-bottom:12px;border-bottom:1px solid #1e1e35}
+h1{font-size:19px;color:#fff;font-weight:600}
+#uptime{font-size:11px;color:#555;margin-left:auto;white-space:nowrap}
+.dot{width:9px;height:9px;border-radius:50%;background:#333;flex-shrink:0}
+.dot.on{background:#2ecc71}
+.dot.off{background:#e74c3c;animation:blink 1.2s ease-in-out infinite}
+@keyframes blink{50%{opacity:.25}}
+
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px}
+.card{background:#12122a;border-radius:10px;padding:14px 16px;border:1px solid #1e1e3a}
+.card .lbl{font-size:10px;color:#666;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px}
+.card .val{font-size:38px;font-weight:700;font-family:monospace;line-height:1}
+.card .unit{font-size:11px;color:#555;margin-top:3px}
+
+.section{margin-bottom:18px}
+.section-title{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px}
+canvas{display:block;width:100%;border-radius:8px;background:#12122a;border:1px solid #1e1e3a}
+
+footer{text-align:center;font-size:11px;color:#333;margin-top:8px}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="dot off" id="dot"></span>
+  <h1 id="title">LoggerMTZ</h1>
+  <span id="uptime"></span>
+</header>
+
+<div class="cards">
+  <div class="card">
+    <div class="lbl">Temperatura</div>
+    <div class="val" id="v-temp" style="color:#e74c3c">—</div>
+    <div class="unit">°C</div>
+  </div>
+  <div class="card">
+    <div class="lbl">Umidade</div>
+    <div class="val" id="v-hum" style="color:#3498db">—</div>
+    <div class="unit">%</div>
+  </div>
+  <div class="card">
+    <div class="lbl">Tensão</div>
+    <div class="val" id="v-volt" style="color:#f39c12">—</div>
+    <div class="unit">V AC</div>
+  </div>
+  <div class="card">
+    <div class="lbl">Corrente</div>
+    <div class="val" id="v-curr" style="color:#2ecc71">—</div>
+    <div class="unit">A</div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Tensão AC (V)</div>
+  <canvas id="c-volt" height="110"></canvas>
+</div>
+<div class="section">
+  <div class="section-title">Corrente AC (A)</div>
+  <canvas id="c-curr" height="110"></canvas>
+</div>
+<div class="section">
+  <div class="section-title">Temperatura (°C) &amp; Umidade (%)</div>
+  <canvas id="c-env" height="110"></canvas>
+</div>
+
+<footer id="footer">Conectando...</footer>
+
+<script>
+var data = [];
+var ws, pingTimer, uptimeStart;
+
+var COLORS = {
+  volt:'#f39c12', curr:'#2ecc71',
+  temp:'#e74c3c', hum:'#3498db'
+};
+
+// ── WebSocket ────────────────────────────────────────────────
+function connect() {
+  ws = new WebSocket('ws://' + location.host + '/ws');
+
+  ws.onopen = function() {
+    setDot(true);
+    uptimeStart = Date.now();
+    startPing();
+  };
+
+  ws.onmessage = function(e) {
+    var msg = JSON.parse(e.data);
+    if (msg.type === 'history') {
+      data = msg.data;
+      refresh();
+    } else if (msg.type === 'reading') {
+      data.push({t:msg.t, h:msg.h, v:msg.v, c:msg.c, s:msg.s});
+      if (data.length > 200) data.shift();
+      updateCards(data[data.length-1]);
+      drawAll();
+      updateFooter();
+    }
+  };
+
+  ws.onclose = function() {
+    setDot(false);
+    clearInterval(pingTimer);
+    setTimeout(connect, 3000);
+  };
+
+  ws.onerror = function() { ws.close(); };
+}
+
+function startPing() {
+  pingTimer = setInterval(function() {
+    if (ws.readyState === WebSocket.OPEN) ws.send('ping');
+  }, 20000);
+}
+
+// ── Status ───────────────────────────────────────────────────
+function setDot(on) {
+  var d = document.getElementById('dot');
+  d.className = 'dot ' + (on ? 'on' : 'off');
+}
+
+function updateFooter() {
+  var n = data.length;
+  var last = data[n-1];
+  if (!last) return;
+  document.getElementById('footer').textContent =
+    n + ' leituras · última: T=' + last.t.toFixed(1) + '°C  V=' + last.v.toFixed(0) + 'V  I=' + last.c.toFixed(2) + 'A';
+}
+
+// Busca identidade do logger uma vez
+function fetchStatus() {
+  fetch('/api/status').then(function(r){return r.json();}).then(function(s) {
+    document.getElementById('title').textContent = s.ssid;
+    document.title = s.ssid;
+    tickUptime(s.uptime);
+  }).catch(function(){});
+}
+
+function tickUptime(baseSeconds) {
+  var base = Math.round(baseSeconds);
+  setInterval(function() {
+    base++;
+    var h = Math.floor(base / 3600);
+    var m = Math.floor((base % 3600) / 60);
+    var s = base % 60;
+    document.getElementById('uptime').textContent =
+      (h ? h + 'h ' : '') + (m ? m + 'm ' : '') + s + 's';
+  }, 1000);
+}
+
+// ── Cards ────────────────────────────────────────────────────
+function updateCards(r) {
+  document.getElementById('v-temp').textContent = r.t.toFixed(1);
+  document.getElementById('v-hum').textContent  = r.h.toFixed(1);
+  document.getElementById('v-volt').textContent = r.v.toFixed(1);
+  document.getElementById('v-curr').textContent = r.c.toFixed(2);
+}
+
+function refresh() {
+  if (data.length > 0) updateCards(data[data.length-1]);
+  drawAll();
+  updateFooter();
+  fetchStatus();
+}
+
+// ── Canvas charts ────────────────────────────────────────────
+function drawChart(id, datasets, colors) {
+  var canvas = document.getElementById(id);
+  if (!canvas) return;
+
+  var DPR = window.devicePixelRatio || 1;
+  var W = canvas.offsetWidth || 320;
+  var H = parseInt(canvas.getAttribute('height')) || 110;
+  canvas.width  = W * DPR;
+  canvas.height = H * DPR;
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+
+  var ctx = canvas.getContext('2d');
+  ctx.scale(DPR, DPR);
+
+  var PL = 42, PR = 8, PT = 8, PB = 22;
+  var pw = W - PL - PR, ph = H - PT - PB;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Sem dados
+  var hasData = datasets.some(function(d){ return d.length >= 2; });
+  if (!hasData) {
+    ctx.fillStyle = '#333';
+    ctx.font = '12px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText('Aguardando dados...', W / 2, H / 2 + 4);
+    return;
+  }
+
+  // Intervalo global
+  var allVals = [];
+  datasets.forEach(function(d){ allVals = allVals.concat(d); });
+  var lo = Math.min.apply(null, allVals);
+  var hi = Math.max.apply(null, allVals);
+  var pad = (hi - lo) * 0.12 || 1;
+  lo -= pad; hi += pad;
+
+  var N = datasets[0].length;
+  function toX(i) { return PL + (i / Math.max(N-1, 1)) * pw; }
+  function toY(v) { return PT + ph - ((v - lo) / (hi - lo)) * ph; }
+
+  // Eixo Y (grid)
+  ctx.lineWidth = 1;
+  for (var g = 0; g <= 3; g++) {
+    var frac = g / 3;
+    var yv   = hi - frac * (hi - lo);
+    var gy   = PT + frac * ph;
+
+    ctx.strokeStyle = '#1a1a30';
+    ctx.beginPath(); ctx.moveTo(PL, gy); ctx.lineTo(PL + pw, gy); ctx.stroke();
+
+    ctx.fillStyle = '#444';
+    ctx.font = '9px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(yv.toFixed(1), PL - 3, gy + 3);
+  }
+
+  // Eixo X — timestamps (início e fim)
+  if (data.length >= 2) {
+    ctx.fillStyle = '#333';
+    ctx.font = '9px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(fmtTime(data[0].s), PL, H - 4);
+    ctx.textAlign = 'right';
+    ctx.fillText(fmtTime(data[N-1].s), PL + pw, H - 4);
+  }
+
+  // Cada dataset
+  datasets.forEach(function(vals, di) {
+    if (vals.length < 2) return;
+    var col = colors[di];
+
+    // Fill
+    ctx.beginPath();
+    vals.forEach(function(v, i) {
+      i === 0 ? ctx.moveTo(toX(i), toY(v)) : ctx.lineTo(toX(i), toY(v));
+    });
+    ctx.lineTo(toX(vals.length-1), PT + ph);
+    ctx.lineTo(toX(0), PT + ph);
+    ctx.closePath();
+    ctx.fillStyle = col + '20';
+    ctx.fill();
+
+    // Line
+    ctx.beginPath();
+    vals.forEach(function(v, i) {
+      i === 0 ? ctx.moveTo(toX(i), toY(v)) : ctx.lineTo(toX(i), toY(v));
+    });
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1.8;
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+
+    // Ponto mais recente
+    var lx = toX(vals.length-1), ly = toY(vals[vals.length-1]);
+    ctx.beginPath();
+    ctx.arc(lx, ly, 3, 0, 2*Math.PI);
+    ctx.fillStyle = col;
+    ctx.fill();
+  });
+}
+
+function drawAll() {
+  var volts = data.map(function(r){ return r.v; });
+  var currs = data.map(function(r){ return r.c; });
+  var temps = data.map(function(r){ return r.t; });
+  var hums  = data.map(function(r){ return r.h; });
+
+  drawChart('c-volt', [volts], [COLORS.volt]);
+  drawChart('c-curr', [currs], [COLORS.curr]);
+  drawChart('c-env',  [temps, hums], [COLORS.temp, COLORS.hum]);
+}
+
+function fmtTime(s) {
+  var d = new Date(s * 1000);
+  var hh = String(d.getUTCHours()).padStart(2,'0');
+  var mm = String(d.getUTCMinutes()).padStart(2,'0');
+  var ss = String(d.getUTCSeconds()).padStart(2,'0');
+  return hh + ':' + mm + ':' + ss;
+}
+
+window.addEventListener('resize', drawAll);
+connect();
+</script>
+</body>
+</html>

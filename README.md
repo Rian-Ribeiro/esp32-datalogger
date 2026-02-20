@@ -1,80 +1,67 @@
-# ESP32 Datalogger — Monitoramento de Quadro Elétrico
+# LoggerMTZ — Datalogger para Quadro Elétrico
 
-Datalogger para quadro elétrico com ESP32, medindo temperatura, umidade, tensão AC e corrente AC, com dashboard web em tempo real.
+Datalogger autônomo baseado em ESP32 para monitoramento de quadros elétricos. Mede temperatura, umidade, tensão AC e corrente AC, armazena o histórico internamente e serve um dashboard web diretamente — sem internet, sem servidor externo.
+
+## Como funciona
+
+O ESP32 cria um ponto de acesso WiFi próprio (`LoggerMTZ-XXXXXX`). Qualquer dispositivo conectado a essa rede acessa o dashboard em `http://192.168.4.1`.
+
+```
+[DHT11 / ZMPT101B / SCT-013]
+        |
+      ESP32 — Access Point WiFi "LoggerMTZ-XXXXXX"
+        |
+   Web Server (porta 80)
+        ├── GET /          → Dashboard HTML (LittleFS)
+        ├── GET /api/data  → Histórico JSON
+        ├── GET /api/status→ Identidade do logger
+        └── WS  /ws        → Stream em tempo real
+```
 
 ## Hardware
 
-| Sensor    | Grandeza           | GPIO |
-|-----------|--------------------|------|
-| DHT11     | Temperatura/Umidade| 4    |
-| ZMPT101B  | Tensão AC (≤260V)  | 34   |
-| SCT-013   | Corrente AC        | 35   |
+| Sensor    | Grandeza            | GPIO |
+|-----------|---------------------|------|
+| DHT11     | Temperatura/Umidade | 4    |
+| ZMPT101B  | Tensão AC (≤260V)   | 34   |
+| SCT-013   | Corrente AC         | 35   |
 
 ## Estrutura
 
 ```
 esp32-datalogger/
-├── firmware/      ← PlatformIO (ESP32)
-├── backend/       ← Node.js + Express + SQLite + WebSocket
-└── frontend/      ← React + Recharts
+├── firmware/
+│   ├── platformio.ini      ← build + libs
+│   ├── src/
+│   │   ├── main.cpp        ← firmware (AP + servidor + sensores)
+│   │   ├── config.h        ← parâmetros configuráveis
+│   │   └── config.h.example
+│   └── data/
+│       └── index.html      ← dashboard (gravado no LittleFS)
+├── backend/                ← servidor Node.js alternativo
+├── frontend/               ← dashboard React alternativo
+└── docs/
+    └── LOGGER-INFO.md      ← guia completo de uso e técnico
 ```
 
-## Setup
-
-### Firmware
-
-1. Copie e configure as credenciais:
-   ```sh
-   cp firmware/src/config.h.example firmware/src/config.h
-   # Edite WIFI_SSID, WIFI_PASSWORD e SERVER_HOST
-   ```
-2. Compile e faça upload:
-   ```sh
-   cd firmware
-   pio run --target upload
-   pio device monitor   # verifica conexão e envio
-   ```
-
-### Backend
+## Deploy rápido
 
 ```sh
-cd backend
-npm install
-npm start
-# Servidor em http://localhost:3000
+cd firmware
+
+# 1. Gravar firmware
+pio run --target upload
+
+# 2. Gravar dashboard no LittleFS
+pio run --target uploadfs
+
+# 3. Monitorar serial (confirma SSID e IP)
+pio device monitor
 ```
 
-### Frontend
+## Acesso
 
-```sh
-cd frontend
-npm install
-npm run dev
-# Dashboard em http://localhost:5173
-```
+1. Conecte ao WiFi `LoggerMTZ-XXXXXX` com senha `mtz1234567`
+2. Abra `http://192.168.4.1` no navegador
 
-## API
-
-| Método | Rota           | Descrição                        |
-|--------|----------------|----------------------------------|
-| POST   | `/api/data`    | Recebe leitura do ESP32 (JSON)   |
-| GET    | `/api/data`    | Retorna últimas N leituras       |
-
-### Payload POST `/api/data`
-
-```json
-{
-  "temp": 28.5,
-  "humidity": 65.0,
-  "voltage": 220.3,
-  "current": 1.45
-}
-```
-
-## Calibração dos Sensores Analógicos
-
-Os fatores `VOLTAGE_SCALE` e `CURRENT_SCALE` em `config.h` precisam ser ajustados com um multímetro de referência após a montagem. Os valores padrão são estimativas iniciais.
-
-## WebSocket
-
-O backend faz broadcast de cada nova leitura (`{ type: "reading", data: {...} }`) para todos os clientes conectados. Ao conectar, o cliente recebe o histórico recente (`{ type: "history", data: [...] }`).
+Para detalhes completos, consulte [`docs/LOGGER-INFO.md`](docs/LOGGER-INFO.md).

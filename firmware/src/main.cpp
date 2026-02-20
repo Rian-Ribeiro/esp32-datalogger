@@ -1,141 +1,269 @@
 #include <Arduino.h>
 #include <WiFi.h>
-#include <HTTPClient.h>
+#include <ESPAsyncWebServer.h>
+#include <LittleFS.h>
 #include <DHT.h>
 #include <ArduinoJson.h>
 #include "config.h"
 
-// --- Pinos ---
-#define DHT_PIN     4
-#define VOLTAGE_PIN 34
-#define CURRENT_PIN 35
+// --- Hardware ---
+DHT dht(DHT_PIN, DHT11);
 
-// --- DHT11 ---
-#define DHT_TYPE DHT11
-DHT dht(DHT_PIN, DHT_TYPE);
+// --- Web server e WebSocket ---
+AsyncWebServer server(80);
+AsyncWebSocket  ws("/ws");
 
-// --- Calibração dos sensores analógicos ---
-// ZMPT101B: fator de escala para converter leitura ADC em Volts RMS
-// Ajuste VOLTAGE_SCALE conforme calibração com multímetro
-#define VOLTAGE_SCALE    0.1f   // V/unidade ADC (ajustar em campo)
-// SCT-013 (100A/50mA): fator para converter leitura ADC em Amperes RMS
-// Ajuste CURRENT_SCALE conforme o modelo do SCT-013 utilizado
-#define CURRENT_SCALE    0.05f  // A/unidade ADC (ajustar em campo)
+// --- SSID gerado em runtime a partir do MAC ---
+String apSSID;
 
-// Tempo de amostragem para cálculo RMS (ms) — cobre >= 5 ciclos a 50Hz (100ms)
-#define SAMPLE_WINDOW_MS 100
+// --- Buffer circular de leituras em RAM ---
+struct Reading {
+    float    temp;
+    float    humidity;
+    float    voltage;
+    float    current;
+    uint32_t ts;        // segundos desde boot
+};
 
-// --- Protótipos ---
-float readRMS(int pin, float scale);
-bool sendData(float temp, float humidity, float voltage, float current);
-void connectWiFi();
+Reading  history[MAX_HISTORY];
+int      histCount = 0;   // total de entradas no buffer (até MAX_HISTORY)
+int      histHead  = 0;   // próxima posição de escrita
 
-void setup() {
-    Serial.begin(115200);
-    delay(100);
+// ============================================================
+//  WiFi — Access Point
+// ============================================================
+void setupAP() {
+    WiFi.mode(WIFI_AP);
 
-    Serial.println("\n[ESP32 Datalogger] Iniciando...");
+    // Serial único: últimos 3 bytes do MAC → 6 chars hex
+    uint8_t mac[6];
+    WiFi.softAPmacAddress(mac);
+    char serial[7];
+    snprintf(serial, sizeof(serial), "%02X%02X%02X", mac[3], mac[4], mac[5]);
+    apSSID = String("LoggerMTZ-") + serial;
 
-    dht.begin();
+    WiFi.softAP(apSSID.c_str(), AP_PASSWORD);
 
-    // ADC: resolução 12 bits (0–4095), atenuação para até ~3.3V
-    analogReadResolution(12);
-    analogSetAttenuation(ADC_11db);
-
-    connectWiFi();
+    Serial.printf("\n[AP] SSID  : %s\n",   apSSID.c_str());
+    Serial.printf("[AP] Senha : %s\n",      AP_PASSWORD);
+    Serial.printf("[AP] IP    : %s\n",      WiFi.softAPIP().toString().c_str());
 }
 
-void loop() {
-    static unsigned long lastSend = 0;
+// ============================================================
+//  LittleFS
+// ============================================================
+void setupFS() {
+    if (!LittleFS.begin(true)) {
+        Serial.println("[FS] Falha ao montar LittleFS");
+        return;
+    }
+    Serial.println("[FS] LittleFS montado");
+}
 
-    if (millis() - lastSend >= SEND_INTERVAL_MS) {
-        lastSend = millis();
+void loadHistory() {
+    if (!LittleFS.exists(DATA_FILE)) return;
 
-        // Reconecta WiFi se necessário
-        if (WiFi.status() != WL_CONNECTED) {
-            Serial.println("[WiFi] Reconectando...");
-            connectWiFi();
-        }
+    File f = LittleFS.open(DATA_FILE, "r");
+    if (!f) return;
 
-        // Leitura DHT11
-        float temp     = dht.readTemperature();
-        float humidity = dht.readHumidity();
+    histCount = 0;
+    histHead  = 0;
 
-        if (isnan(temp) || isnan(humidity)) {
-            Serial.println("[DHT11] Falha na leitura — pulando ciclo.");
-            return;
-        }
+    while (f.available()) {
+        String line = f.readStringUntil('\n');
+        line.trim();
+        if (line.length() == 0) continue;
 
-        // Leitura RMS dos sensores AC
-        float voltage = readRMS(VOLTAGE_PIN, VOLTAGE_SCALE);
-        float current = readRMS(CURRENT_PIN, CURRENT_SCALE);
+        JsonDocument doc;
+        if (deserializeJson(doc, line) != DeserializationError::Ok) continue;
 
-        Serial.printf("[Leitura] Temp=%.1f°C  Umid=%.1f%%  Tensao=%.1fV  Corrente=%.2fA\n",
-                      temp, humidity, voltage, current);
+        Reading r;
+        r.temp     = doc["t"] | 0.0f;
+        r.humidity = doc["h"] | 0.0f;
+        r.voltage  = doc["v"] | 0.0f;
+        r.current  = doc["c"] | 0.0f;
+        r.ts       = doc["s"] | (uint32_t)0;
 
-        bool ok = sendData(temp, humidity, voltage, current);
-        Serial.printf("[HTTP] Envio %s\n", ok ? "OK" : "FALHOU");
+        history[histHead] = r;
+        histHead = (histHead + 1) % MAX_HISTORY;
+        if (histCount < MAX_HISTORY) histCount++;
+    }
+    f.close();
+
+    Serial.printf("[FS] %d leituras carregadas do histórico\n", histCount);
+}
+
+void saveReading(const Reading& r) {
+    // Rotaciona arquivo se ultrapassar o limite
+    File chk = LittleFS.open(DATA_FILE, "r");
+    if (chk && chk.size() > (size_t)(MAX_FILE_KB * 1024)) {
+        chk.close();
+        LittleFS.remove(DATA_FILE);
+        Serial.println("[FS] Arquivo rotacionado");
+    } else if (chk) {
+        chk.close();
+    }
+
+    File f = LittleFS.open(DATA_FILE, "a");
+    if (!f) return;
+
+    char line[80];
+    snprintf(line, sizeof(line),
+             "{\"t\":%.1f,\"h\":%.1f,\"v\":%.1f,\"c\":%.2f,\"s\":%lu}\n",
+             r.temp, r.humidity, r.voltage, r.current, (unsigned long)r.ts);
+    f.print(line);
+    f.close();
+}
+
+// ============================================================
+//  Buffer circular
+// ============================================================
+void addReading(const Reading& r) {
+    history[histHead] = r;
+    histHead = (histHead + 1) % MAX_HISTORY;
+    if (histCount < MAX_HISTORY) histCount++;
+}
+
+String historyToJSON() {
+    String out = "[";
+    int start = (histCount < MAX_HISTORY) ? 0 : histHead;
+
+    for (int i = 0; i < histCount; i++) {
+        const Reading& r = history[(start + i) % MAX_HISTORY];
+        if (i > 0) out += ',';
+        char buf[80];
+        snprintf(buf, sizeof(buf),
+                 "{\"t\":%.1f,\"h\":%.1f,\"v\":%.1f,\"c\":%.2f,\"s\":%lu}",
+                 r.temp, r.humidity, r.voltage, r.current, (unsigned long)r.ts);
+        out += buf;
+    }
+    out += ']';
+    return out;
+}
+
+// ============================================================
+//  WebSocket
+// ============================================================
+void broadcastReading(const Reading& r) {
+    char buf[100];
+    snprintf(buf, sizeof(buf),
+             "{\"type\":\"reading\",\"t\":%.1f,\"h\":%.1f,\"v\":%.1f,\"c\":%.2f,\"s\":%lu}",
+             r.temp, r.humidity, r.voltage, r.current, (unsigned long)r.ts);
+    ws.textAll(buf);
+}
+
+void onWSEvent(AsyncWebSocket*, AsyncWebSocketClient* client,
+               AwsEventType type, void*, uint8_t*, size_t) {
+    if (type == WS_EVT_CONNECT) {
+        Serial.printf("[WS] Cliente #%u conectado\n", client->id());
+        // Envia histórico completo ao conectar
+        String msg = "{\"type\":\"history\",\"data\":" + historyToJSON() + "}";
+        client->text(msg);
+    } else if (type == WS_EVT_DISCONNECT) {
+        Serial.printf("[WS] Cliente #%u desconectado\n", client->id());
     }
 }
 
-// Calcula o valor RMS de um sinal AC amostrado durante SAMPLE_WINDOW_MS
+// ============================================================
+//  HTTP Server
+// ============================================================
+void setupServer() {
+    // Arquivos estáticos do LittleFS (dashboard)
+    server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
+
+    // API: histórico de leituras
+    server.on("/api/data", HTTP_GET, [](AsyncWebServerRequest* req) {
+        req->send(200, "application/json", historyToJSON());
+    });
+
+    // API: status/identidade do logger
+    server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest* req) {
+        char buf[200];
+        snprintf(buf, sizeof(buf),
+                 "{\"ssid\":\"%s\",\"ip\":\"%s\",\"uptime\":%lu,\"readings\":%d}",
+                 apSSID.c_str(),
+                 WiFi.softAPIP().toString().c_str(),
+                 millis() / 1000,
+                 histCount);
+        req->send(200, "application/json", buf);
+    });
+
+    // Redireciona qualquer rota desconhecida para o dashboard
+    server.onNotFound([](AsyncWebServerRequest* req) {
+        req->redirect("/");
+    });
+
+    ws.onEvent(onWSEvent);
+    server.addHandler(&ws);
+    server.begin();
+
+    Serial.printf("[HTTP] Servidor em http://%s\n", WiFi.softAPIP().toString().c_str());
+}
+
+// ============================================================
+//  Sensores
+// ============================================================
 float readRMS(int pin, float scale) {
     unsigned long start = millis();
     float sumSq = 0.0f;
     long  count  = 0;
 
-    while (millis() - start < SAMPLE_WINDOW_MS) {
-        int raw = analogRead(pin);
-        // Centraliza em torno do ponto médio do ADC (sinal AC sobreposto em DC)
-        float centered = raw - 2048.0f;
+    while (millis() - start < SAMPLE_WINDOW) {
+        float centered = (float)analogRead(pin) - 2048.0f;
         sumSq += centered * centered;
         count++;
-        delayMicroseconds(100); // ~10kHz de amostragem
+        delayMicroseconds(100);
     }
 
-    if (count == 0) return 0.0f;
-    float rmsRaw = sqrt(sumSq / count);
-    return rmsRaw * scale;
+    return count > 0 ? sqrtf(sumSq / count) * scale : 0.0f;
 }
 
-void connectWiFi() {
-    Serial.printf("[WiFi] Conectando a %s", WIFI_SSID);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+// ============================================================
+//  Setup / Loop
+// ============================================================
+void setup() {
+    Serial.begin(115200);
+    delay(200);
+    Serial.println("\n=== LoggerMTZ ===");
 
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-        delay(500);
-        Serial.print(".");
-        attempts++;
-    }
+    dht.begin();
+    analogReadResolution(12);
+    analogSetAttenuation(ADC_11db);
 
-    if (WiFi.status() == WL_CONNECTED) {
-        Serial.printf("\n[WiFi] Conectado! IP: %s\n", WiFi.localIP().toString().c_str());
-    } else {
-        Serial.println("\n[WiFi] Falha na conexao. Continuando sem WiFi.");
-    }
+    setupFS();
+    loadHistory();
+    setupAP();
+    setupServer();
 }
 
-bool sendData(float temp, float humidity, float voltage, float current) {
-    if (WiFi.status() != WL_CONNECTED) return false;
+void loop() {
+    static unsigned long lastRead = 0;
 
-    HTTPClient http;
-    String url = String("http://") + SERVER_HOST + ":" + SERVER_PORT + API_PATH;
-    http.begin(url);
-    http.addHeader("Content-Type", "application/json");
+    ws.cleanupClients();
 
-    JsonDocument doc;
-    doc["temp"]      = serialized(String(temp, 1));
-    doc["humidity"]  = serialized(String(humidity, 1));
-    doc["voltage"]   = serialized(String(voltage, 1));
-    doc["current"]   = serialized(String(current, 2));
-    doc["timestamp"] = millis();
+    if (millis() - lastRead >= READ_INTERVAL) {
+        lastRead = millis();
 
-    String body;
-    serializeJson(doc, body);
+        float temp     = dht.readTemperature();
+        float humidity = dht.readHumidity();
 
-    int code = http.POST(body);
-    http.end();
+        if (isnan(temp) || isnan(humidity)) {
+            Serial.println("[DHT11] Falha na leitura — pulando ciclo");
+            return;
+        }
 
-    return (code == 200 || code == 201);
+        Reading r;
+        r.temp     = temp;
+        r.humidity = humidity;
+        r.voltage  = readRMS(VOLTAGE_PIN, VOLTAGE_SCALE);
+        r.current  = readRMS(CURRENT_PIN, CURRENT_SCALE);
+        r.ts       = millis() / 1000;
+
+        addReading(r);
+        saveReading(r);
+        broadcastReading(r);
+
+        Serial.printf("[Leitura] Temp=%.1f°C  Umid=%.1f%%  Tensao=%.1fV  Corrente=%.2fA\n",
+                      r.temp, r.humidity, r.voltage, r.current);
+    }
 }
