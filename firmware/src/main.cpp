@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <WiFi.h>
+#include <DNSServer.h>
 #include <ESPAsyncWebServer.h>
 #include <LittleFS.h>
 #include <DHT.h>
@@ -9,8 +10,9 @@
 // --- Hardware ---
 DHT dht(DHT_PIN, DHT11);
 
-// --- Web server e WebSocket ---
-AsyncWebServer server(80);
+// --- Rede ---
+DNSServer       dnsServer;
+AsyncWebServer  server(80);
 AsyncWebSocket  ws("/ws");
 
 // --- SSID gerado em runtime a partir do MAC ---
@@ -26,8 +28,8 @@ struct Reading {
 };
 
 Reading  history[MAX_HISTORY];
-int      histCount = 0;   // total de entradas no buffer (até MAX_HISTORY)
-int      histHead  = 0;   // próxima posição de escrita
+int      histCount = 0;
+int      histHead  = 0;
 
 // ============================================================
 //  WiFi — Access Point
@@ -35,13 +37,11 @@ int      histHead  = 0;   // próxima posição de escrita
 void setupAP() {
     WiFi.mode(WIFI_AP);
 
-    // IP estático do ponto de acesso
     IPAddress localIP(AP_LOCAL_IP);
     IPAddress gateway(AP_GATEWAY);
     IPAddress subnet(AP_SUBNET);
     WiFi.softAPConfig(localIP, gateway, subnet);
 
-    // Serial único: últimos 3 bytes do MAC → 6 chars hex
     uint8_t mac[6];
     WiFi.softAPmacAddress(mac);
     char serial[7];
@@ -49,6 +49,9 @@ void setupAP() {
     apSSID = String("LoggerMTZ-") + serial;
 
     WiFi.softAP(apSSID.c_str(), AP_PASSWORD);
+
+    // DNS: resolve qualquer domínio para o IP do logger (captive portal)
+    dnsServer.start(53, "*", localIP);
 
     Serial.printf("\n[AP] SSID  : %s\n",   apSSID.c_str());
     Serial.printf("[AP] Senha : %s\n",      AP_PASSWORD);
@@ -60,10 +63,18 @@ void setupAP() {
 // ============================================================
 void setupFS() {
     if (!LittleFS.begin(true)) {
-        Serial.println("[FS] Falha ao montar LittleFS");
+        Serial.println("[FS] ERRO: falha ao montar LittleFS");
         return;
     }
     Serial.println("[FS] LittleFS montado");
+
+    // Lista arquivos disponíveis (diagnóstico)
+    File root = LittleFS.open("/");
+    File f    = root.openNextFile();
+    while (f) {
+        Serial.printf("[FS] %s (%u bytes)\n", f.name(), f.size());
+        f = root.openNextFile();
+    }
 }
 
 void loadHistory() {
@@ -100,7 +111,6 @@ void loadHistory() {
 }
 
 void saveReading(const Reading& r) {
-    // Rotaciona arquivo se ultrapassar o limite
     File chk = LittleFS.open(DATA_FILE, "r");
     if (chk && chk.size() > (size_t)(MAX_FILE_KB * 1024)) {
         chk.close();
@@ -162,7 +172,6 @@ void onWSEvent(AsyncWebSocket*, AsyncWebSocketClient* client,
                AwsEventType type, void*, uint8_t*, size_t) {
     if (type == WS_EVT_CONNECT) {
         Serial.printf("[WS] Cliente #%u conectado\n", client->id());
-        // Envia histórico completo ao conectar
         String msg = "{\"type\":\"history\",\"data\":" + historyToJSON() + "}";
         client->text(msg);
     } else if (type == WS_EVT_DISCONNECT) {
@@ -173,16 +182,30 @@ void onWSEvent(AsyncWebSocket*, AsyncWebSocketClient* client,
 // ============================================================
 //  HTTP Server
 // ============================================================
-void setupServer() {
-    // Arquivos estáticos do LittleFS (dashboard)
-    server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
+void serveIndex(AsyncWebServerRequest* req) {
+    if (LittleFS.exists("/index.html")) {
+        req->send(LittleFS, "/index.html", "text/html");
+    } else {
+        req->send(200, "text/html",
+            "<!DOCTYPE html><html><body>"
+            "<h2>LoggerMTZ</h2>"
+            "<p style='color:red'>Arquivo index.html nao encontrado no LittleFS.<br>"
+            "Execute: <code>pio run --target uploadfs</code></p>"
+            "</body></html>");
+    }
+}
 
-    // API: histórico de leituras
+void setupServer() {
+    // Dashboard
+    server.on("/",           HTTP_GET, serveIndex);
+    server.on("/index.html", HTTP_GET, serveIndex);
+
+    // API: histórico
     server.on("/api/data", HTTP_GET, [](AsyncWebServerRequest* req) {
         req->send(200, "application/json", historyToJSON());
     });
 
-    // API: status/identidade do logger
+    // API: status
     server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest* req) {
         char buf[200];
         snprintf(buf, sizeof(buf),
@@ -194,9 +217,15 @@ void setupServer() {
         req->send(200, "application/json", buf);
     });
 
-    // Redireciona qualquer rota desconhecida para o dashboard
+    // Captive portal + catch-all → dashboard
     server.onNotFound([](AsyncWebServerRequest* req) {
-        req->redirect("/");
+        // Requisições de detecção de conectividade (Android/iOS/Windows)
+        // também recebem o dashboard, ativando o "Abrir na rede"
+        if (LittleFS.exists("/index.html")) {
+            req->send(LittleFS, "/index.html", "text/html");
+        } else {
+            req->redirect("/");
+        }
     });
 
     ws.onEvent(onWSEvent);
@@ -245,6 +274,7 @@ void setup() {
 void loop() {
     static unsigned long lastRead = 0;
 
+    dnsServer.processNextRequest();
     ws.cleanupClients();
 
     if (millis() - lastRead >= READ_INTERVAL) {
