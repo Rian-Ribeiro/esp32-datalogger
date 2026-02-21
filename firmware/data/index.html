@@ -5,298 +5,802 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <title>LoggerMTZ</title>
 <style>
+:root{
+  --bg:#070712;--bg2:#0e0e20;--bg3:#13132a;
+  --border:#1e1e3a;--border2:#2a2a48;
+  --text:#e2e8f0;--text2:#94a3b8;--text3:#475569;
+  --l1:#f59e0b;--l2:#3b82f6;--l3:#10b981;
+  --pow:#a855f7;--temp:#ef4444;--hum:#3b82f6;
+  --ok:#10b981;--warn:#f59e0b;--err:#ef4444;
+  --radius:12px;--radius-sm:8px;
+}
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#0d0d1a;color:#ccc;font:15px/1.5 system-ui,sans-serif;padding:14px;max-width:700px;margin:0 auto}
+html,body{height:100%}
+body{background:var(--bg);color:var(--text);font:14px/1.5 system-ui,sans-serif;min-height:100vh;display:flex;flex-direction:column}
 
-header{display:flex;align-items:center;gap:10px;margin-bottom:18px;padding-bottom:12px;border-bottom:1px solid #1e1e35}
-h1{font-size:19px;color:#fff;font-weight:600}
-#uptime{font-size:11px;color:#555;margin-left:auto;white-space:nowrap}
-.dot{width:9px;height:9px;border-radius:50%;background:#333;flex-shrink:0}
-.dot.on{background:#2ecc71}
-.dot.off{background:#e74c3c;animation:blink 1.2s ease-in-out infinite}
-@keyframes blink{50%{opacity:.25}}
+/* ── Header ─────────────────────────────────────────────── */
+header{
+  background:linear-gradient(135deg,#0e0e28 0%,#16103a 100%);
+  border-bottom:1px solid var(--border);
+  padding:12px 16px;
+  display:flex;align-items:center;gap:10px;
+  position:sticky;top:0;z-index:100;
+}
+.logo{font-size:16px;font-weight:700;color:#fff;white-space:nowrap;
+  background:linear-gradient(90deg,var(--pow),#60a5fa);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.serial-badge{
+  font-size:10px;font-family:monospace;padding:2px 8px;
+  background:var(--bg3);border:1px solid var(--border2);
+  border-radius:20px;color:var(--text2);white-space:nowrap;flex-shrink:0
+}
+#hd-uptime{font-size:11px;color:var(--text3);margin-left:auto;white-space:nowrap;flex-shrink:0;padding-left:8px}
+.dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;transition:background .3s}
+.dot.on{background:var(--ok);box-shadow:0 0 6px var(--ok)}
+.dot.off{background:var(--err);animation:blink 1.2s ease-in-out infinite}
+@keyframes blink{50%{opacity:.2}}
 
-.cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px}
-.card{background:#12122a;border-radius:10px;padding:14px 16px;border:1px solid #1e1e3a}
-.card .lbl{font-size:10px;color:#666;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px}
-.card .val{font-size:38px;font-weight:700;font-family:monospace;line-height:1}
-.card .unit{font-size:11px;color:#555;margin-top:3px}
+/* ── Nav tabs ────────────────────────────────────────────── */
+nav{
+  background:var(--bg2);border-bottom:1px solid var(--border);
+  padding:0 16px;display:flex;gap:4px;overflow-x:auto;
+}
+nav::-webkit-scrollbar{display:none}
+.tab{
+  padding:10px 16px;font-size:13px;font-weight:500;color:var(--text2);
+  border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;
+  white-space:nowrap;transition:color .2s,border-color .2s;
+}
+.tab.active{color:var(--pow);border-bottom-color:var(--pow)}
+.tab:hover:not(.active){color:var(--text)}
 
-.section{margin-bottom:18px}
-.section-title{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px}
-canvas{display:block;width:100%;border-radius:8px;background:#12122a;border:1px solid #1e1e3a}
+/* ── Main content ────────────────────────────────────────── */
+main{flex:1;padding:14px;max-width:900px;width:100%;margin:0 auto}
+.page{display:none}
+.page.active{display:block}
 
-footer{text-align:center;font-size:11px;color:#333;margin-top:8px}
+/* ── Cards ───────────────────────────────────────────────── */
+.card{
+  background:var(--bg2);border:1px solid var(--border);
+  border-radius:var(--radius);padding:14px 16px;min-width:0;
+  transition:border-color .2s;
+}
+.card:hover{border-color:var(--border2)}
+.lbl{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:6px}
+.val{font-weight:700;font-family:monospace;line-height:1}
+.unit{font-size:11px;color:var(--text3);margin-top:4px}
+
+/* ── Card potência total ─────────────────────────────────── */
+#card-pow{
+  background:linear-gradient(135deg,#1a0a2e 0%,#13132a 100%);
+  border-color:var(--pow);margin-bottom:12px;
+  display:flex;align-items:center;gap:20px;flex-wrap:wrap;padding:16px 20px;
+}
+#v-total{font-size:clamp(36px,10vw,56px);color:var(--pow)}
+.pow-right{display:flex;flex-direction:column;gap:8px}
+#badge-gen{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:4px 14px;border-radius:20px;font-size:12px;font-weight:600;
+  letter-spacing:.4px;transition:all .3s;
+}
+.gen-on{background:#0d2a1a;color:var(--ok);border:1px solid #1a4a2e}
+.gen-off{background:#1e1e2a;color:var(--text3);border:1px solid var(--border2)}
+.gen-dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.kwh-row{font-size:12px;color:var(--text2)}
+.kwh-row span{color:var(--pow);font-weight:600;font-family:monospace}
+
+/* ── Grid fases ──────────────────────────────────────────── */
+.grid-phases{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.phase-card{border-radius:var(--radius);padding:10px 12px;min-width:0;background:var(--bg2)}
+.phase-card.l1{border:1px solid #f59e0b30;border-left:3px solid var(--l1)}
+.phase-card.l2{border:1px solid #3b82f630;border-left:3px solid var(--l2)}
+.phase-card.l3{border:1px solid #10b98130;border-left:3px solid var(--l3)}
+.phase-val{font-weight:700;font-family:monospace;line-height:1;font-size:clamp(18px,5vw,28px)}
+.phase-val-sm{font-size:clamp(16px,4vw,22px)}
+
+/* ── Grid secundário ─────────────────────────────────────── */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.env-row{display:flex;gap:20px;margin-top:6px;flex-wrap:wrap}
+.btn{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:7px 16px;border-radius:var(--radius-sm);
+  border:1px solid var(--border2);background:var(--bg3);
+  color:var(--text2);cursor:pointer;font-size:12px;font-weight:500;
+  transition:all .2s;touch-action:manipulation;
+}
+.btn:hover,.btn:active{background:var(--border2);color:var(--text)}
+.btn-danger{border-color:#ef444430;color:var(--err)}
+.btn-danger:hover{background:#2a0a0a;color:var(--err)}
+.btn-primary{border-color:var(--pow);background:#1a0a2e;color:var(--pow)}
+.btn-primary:hover{background:#2a1048}
+.btn-primary:disabled{opacity:.4;cursor:not-allowed}
+
+/* ── Alertas ─────────────────────────────────────────────── */
+#alert-box{display:none;margin-bottom:12px;border-radius:var(--radius);
+  border:1px solid var(--err);background:#150505;overflow:hidden}
+#alert-box.show{display:block;animation:alertpulse 2s ease-in-out infinite}
+@keyframes alertpulse{0%,100%{border-color:var(--err)}50%{border-color:#ef444440}}
+.alert-header{
+  background:#1a0a0a;padding:8px 14px;
+  display:flex;justify-content:space-between;align-items:center;
+  font-size:11px;color:var(--err);font-weight:600;text-transform:uppercase;letter-spacing:.5px;
+}
+.alert-close{background:none;border:none;color:var(--err);cursor:pointer;font-size:18px;line-height:1;padding:0 2px}
+.alert-row{padding:8px 14px;font-size:13px;color:var(--err);border-top:1px solid #2a0a0a}
+
+/* ── Gráficos ────────────────────────────────────────────── */
+.chart-section{margin-bottom:12px}
+.chart-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.chart-title{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.7px}
+.legend{display:flex;gap:12px;font-size:10px;color:var(--text2);flex-wrap:wrap}
+.l-dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:4px;vertical-align:middle}
+canvas{display:block;width:100%;border-radius:var(--radius-sm);background:var(--bg2);border:1px solid var(--border)}
+
+/* ── Página Informações ──────────────────────────────────── */
+.info-grid{display:grid;gap:8px}
+.info-card{
+  background:var(--bg2);border:1px solid var(--border);
+  border-radius:var(--radius);padding:14px 16px;
+  display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px;
+}
+.info-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
+.info-value{font-size:14px;font-weight:600;color:var(--text);font-family:monospace}
+.info-badge{
+  padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;
+}
+.badge-ok{background:#0d2a1a;color:var(--ok);border:1px solid #1a4a2e}
+.badge-warn{background:#2a1a00;color:var(--warn);border:1px solid #4a3000}
+.badge-info{background:#0a142a;color:#60a5fa;border:1px solid #1a2a4a}
+.badge-neutral{background:var(--bg3);color:var(--text2);border:1px solid var(--border2)}
+.section-sep{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;
+  margin:16px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+
+/* ── Página Configurações ────────────────────────────────── */
+.config-section{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:12px}
+.config-title{font-size:13px;font-weight:600;color:var(--text);margin-bottom:14px;
+  display:flex;align-items:center;gap:8px}
+.config-title::before{content:'';display:inline-block;width:3px;height:14px;
+  background:var(--pow);border-radius:2px}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:11px;color:var(--text2);margin-bottom:6px;font-weight:500}
+.field input{
+  width:100%;padding:9px 12px;background:var(--bg3);border:1px solid var(--border2);
+  border-radius:var(--radius-sm);color:var(--text);font-size:14px;outline:none;
+  transition:border-color .2s;font-family:monospace;
+}
+.field input:focus{border-color:var(--pow)}
+.field input::placeholder{color:var(--text3)}
+.field-hint{font-size:10px;color:var(--text3);margin-top:4px}
+.field-row{display:flex;gap:8px;align-items:center}
+.field-row input{flex:1}
+.toggle-pass{background:none;border:none;color:var(--text3);cursor:pointer;padding:4px;font-size:12px}
+.config-actions{display:flex;gap:8px;flex-wrap:wrap}
+.toast{
+  position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
+  background:var(--bg3);border:1px solid var(--border2);
+  border-radius:var(--radius);padding:10px 20px;font-size:13px;
+  color:var(--text);box-shadow:0 8px 32px #000a;
+  opacity:0;transition:opacity .3s;pointer-events:none;z-index:999;white-space:nowrap;
+}
+.toast.show{opacity:1}
+.toast.ok{border-color:var(--ok);color:var(--ok)}
+.toast.err{border-color:var(--err);color:var(--err)}
+
+/* ── Footer ──────────────────────────────────────────────── */
+footer{text-align:center;font-size:10px;color:var(--text3);padding:10px 16px;
+  border-top:1px solid var(--border);background:var(--bg2)}
+
+/* ── Responsive ──────────────────────────────────────────── */
+@media(max-width:600px){
+  main{padding:10px}
+  .grid-phases{gap:6px}
+  .phase-card{padding:8px 10px}
+  #card-pow{padding:12px 14px;gap:12px}
+}
+@media(max-width:420px){
+  .grid-2{grid-template-columns:1fr}
+  .config-actions{flex-direction:column}
+  .config-actions .btn{justify-content:center}
+}
+@media(max-width:360px){
+  .phase-val{font-size:16px}
+  #v-total{font-size:30px}
+}
 </style>
 </head>
 <body>
 
 <header>
   <span class="dot off" id="dot"></span>
-  <h1 id="title">LoggerMTZ</h1>
-  <span id="uptime"></span>
+  <span class="logo" id="hd-ssid">LoggerMTZ</span>
+  <span class="serial-badge" id="hd-serial">#------</span>
+  <span id="hd-uptime"></span>
 </header>
 
-<div class="cards">
-  <div class="card">
-    <div class="lbl">Temperatura</div>
-    <div class="val" id="v-temp" style="color:#e74c3c">—</div>
-    <div class="unit">°C</div>
+<nav>
+  <button class="tab active" onclick="showTab('painel',this)">⚡ Painel</button>
+  <button class="tab" onclick="showTab('info',this)">ℹ Informações</button>
+  <button class="tab" onclick="showTab('config',this)">⚙ Configurações</button>
+</nav>
+
+<main>
+
+<!-- ═══════════ PAINEL ═══════════ -->
+<div id="page-painel" class="page active">
+
+  <div id="alert-box">
+    <div class="alert-header">
+      <span>⚠ Alertas ativos</span>
+      <button class="alert-close" onclick="clearAlerts()">×</button>
+    </div>
+    <div id="alert-rows"></div>
   </div>
-  <div class="card">
-    <div class="lbl">Umidade</div>
-    <div class="val" id="v-hum" style="color:#3498db">—</div>
-    <div class="unit">%</div>
+
+  <!-- Potência total -->
+  <div class="card" id="card-pow">
+    <div>
+      <div class="lbl">Potência Total</div>
+      <div class="val" id="v-total" style="font-size:clamp(36px,10vw,56px);color:var(--pow)">—</div>
+      <div class="unit">kVA</div>
+    </div>
+    <div class="pow-right">
+      <span id="badge-gen" class="gen-off"><span class="gen-dot"></span>AGUARDANDO</span>
+      <div class="kwh-row">⚡ <span id="v-kwh">—</span> kWh acumulados</div>
+    </div>
   </div>
-  <div class="card">
-    <div class="lbl">Tensão</div>
-    <div class="val" id="v-volt" style="color:#f39c12">—</div>
-    <div class="unit">V AC</div>
+
+  <!-- Grid fases — linha 1: Tensões -->
+  <div class="grid-phases">
+    <div class="phase-card l1">
+      <div class="lbl" style="color:var(--l1)">L1 Tensão</div>
+      <div class="phase-val" id="v-v1" style="color:var(--l1)">—</div>
+      <div class="unit">V</div>
+    </div>
+    <div class="phase-card l2">
+      <div class="lbl" style="color:var(--l2)">L2 Tensão</div>
+      <div class="phase-val" id="v-v2" style="color:var(--l2)">—</div>
+      <div class="unit">V</div>
+    </div>
+    <div class="phase-card l3">
+      <div class="lbl" style="color:var(--l3)">L3 Tensão</div>
+      <div class="phase-val" id="v-v3" style="color:var(--l3)">—</div>
+      <div class="unit">V</div>
+    </div>
+
+    <!-- Linha 2: Correntes -->
+    <div class="phase-card l1">
+      <div class="lbl" style="color:var(--l1)">L1 Corrente</div>
+      <div class="phase-val" id="v-i1" style="color:var(--l1)">—</div>
+      <div class="unit">A</div>
+    </div>
+    <div class="phase-card l2">
+      <div class="lbl" style="color:var(--l2)">L2 Corrente</div>
+      <div class="phase-val" id="v-i2" style="color:var(--l2)">—</div>
+      <div class="unit">A</div>
+    </div>
+    <div class="phase-card l3">
+      <div class="lbl" style="color:var(--l3)">L3 Corrente</div>
+      <div class="phase-val" id="v-i3" style="color:var(--l3)">—</div>
+      <div class="unit">A</div>
+    </div>
+
+    <!-- Linha 3: Potências por fase -->
+    <div class="phase-card l1">
+      <div class="lbl" style="color:var(--l1)">L1 Potência</div>
+      <div class="phase-val phase-val-sm" id="v-p1" style="color:var(--l1)">—</div>
+      <div class="unit">kVA</div>
+    </div>
+    <div class="phase-card l2">
+      <div class="lbl" style="color:var(--l2)">L2 Potência</div>
+      <div class="phase-val phase-val-sm" id="v-p2" style="color:var(--l2)">—</div>
+      <div class="unit">kVA</div>
+    </div>
+    <div class="phase-card l3">
+      <div class="lbl" style="color:var(--l3)">L3 Potência</div>
+      <div class="phase-val phase-val-sm" id="v-p3" style="color:var(--l3)">—</div>
+      <div class="unit">kVA</div>
+    </div>
   </div>
-  <div class="card">
-    <div class="lbl">Corrente</div>
-    <div class="val" id="v-curr" style="color:#2ecc71">—</div>
-    <div class="unit">A</div>
+
+  <!-- Cards secundários -->
+  <div class="grid-2">
+    <div class="card">
+      <div class="lbl">Energia Acumulada</div>
+      <div class="val" style="font-size:clamp(20px,6vw,30px);color:var(--pow)" id="v-kwh2">—</div>
+      <div class="unit">kWh</div>
+      <div style="margin-top:10px">
+        <button class="btn btn-danger" onclick="resetEnergy()">↺ Zerar</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="lbl">Temperatura / Umidade</div>
+      <div class="env-row">
+        <div>
+          <div class="val" style="font-size:clamp(20px,6vw,28px);color:var(--temp)" id="v-temp">—</div>
+          <div class="unit">°C</div>
+        </div>
+        <div>
+          <div class="val" style="font-size:clamp(20px,6vw,28px);color:var(--hum)" id="v-hum">—</div>
+          <div class="unit">%</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gráficos -->
+  <div class="chart-section">
+    <div class="chart-header">
+      <span class="chart-title">Tensões AC (V)</span>
+      <div class="legend">
+        <span><span class="l-dot" style="background:var(--l1)"></span>L1</span>
+        <span><span class="l-dot" style="background:var(--l2)"></span>L2</span>
+        <span><span class="l-dot" style="background:var(--l3)"></span>L3</span>
+      </div>
+    </div>
+    <canvas id="c-volt" height="110"></canvas>
+  </div>
+  <div class="chart-section">
+    <div class="chart-header">
+      <span class="chart-title">Correntes AC (A)</span>
+      <div class="legend">
+        <span><span class="l-dot" style="background:var(--l1)"></span>L1</span>
+        <span><span class="l-dot" style="background:var(--l2)"></span>L2</span>
+        <span><span class="l-dot" style="background:var(--l3)"></span>L3</span>
+      </div>
+    </div>
+    <canvas id="c-curr" height="110"></canvas>
+  </div>
+  <div class="chart-section">
+    <div class="chart-header"><span class="chart-title">Potência Total (kVA)</span></div>
+    <canvas id="c-pow" height="100"></canvas>
+  </div>
+  <div class="chart-section">
+    <div class="chart-header">
+      <span class="chart-title">Temperatura &amp; Umidade</span>
+      <div class="legend">
+        <span><span class="l-dot" style="background:var(--temp)"></span>Temp</span>
+        <span><span class="l-dot" style="background:var(--hum)"></span>Umid</span>
+      </div>
+    </div>
+    <canvas id="c-env" height="100"></canvas>
+  </div>
+
+  <footer id="footer">Conectando...</footer>
+</div>
+
+<!-- ═══════════ INFORMAÇÕES ═══════════ -->
+<div id="page-info" class="page">
+
+  <div class="section-sep">Firmware</div>
+  <div class="info-grid">
+    <div class="info-card">
+      <div><div class="info-label">Modelo</div><div class="info-value" id="inf-model">—</div></div>
+      <span class="info-badge badge-info">Firmware</span>
+    </div>
+    <div class="info-card">
+      <div><div class="info-label">Versão</div><div class="info-value" id="inf-version">—</div></div>
+    </div>
+    <div class="info-card">
+      <div><div class="info-label">Número de Série</div><div class="info-value" id="inf-serial">—</div></div>
+      <span class="info-badge badge-neutral">MAC</span>
+    </div>
+  </div>
+
+  <div class="section-sep">Sistema</div>
+  <div class="info-grid">
+    <div class="info-card">
+      <div><div class="info-label">Uptime</div><div class="info-value" id="inf-uptime">—</div></div>
+    </div>
+    <div class="info-card">
+      <div><div class="info-label">Memória Livre</div><div class="info-value" id="inf-heap">—</div></div>
+    </div>
+    <div class="info-card">
+      <div><div class="info-label">Clientes WebSocket</div><div class="info-value" id="inf-clients">—</div></div>
+    </div>
+    <div class="info-card">
+      <div><div class="info-label">Leituras em RAM</div><div class="info-value" id="inf-readings">—</div></div>
+    </div>
+    <div class="info-card">
+      <div><div class="info-label">Banco de Dados</div><div class="info-value" id="inf-db">Modo Autônomo</div></div>
+      <span class="info-badge badge-neutral" id="inf-db-badge">Standalone</span>
+    </div>
+  </div>
+
+  <div class="section-sep">Rede</div>
+  <div class="info-grid">
+    <div class="info-card">
+      <div><div class="info-label">Rede WiFi (SSID)</div><div class="info-value" id="inf-ssid">—</div></div>
+      <span class="info-badge badge-ok">AP</span>
+    </div>
+    <div class="info-card">
+      <div><div class="info-label">Endereço IP</div><div class="info-value" id="inf-ip">—</div></div>
+    </div>
+    <div class="info-card">
+      <div><div class="info-label">Status da Conexão</div><div class="info-value" id="inf-ws">—</div></div>
+      <span class="info-badge" id="inf-ws-badge">—</span>
+    </div>
+  </div>
+
+  <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
+    <button class="btn" onclick="loadSysinfo()">↻ Atualizar</button>
+    <button class="btn btn-danger" onclick="confirmRestart()">⏻ Reiniciar logger</button>
   </div>
 </div>
 
-<div class="section">
-  <div class="section-title">Tensão AC (V)</div>
-  <canvas id="c-volt" height="110"></canvas>
-</div>
-<div class="section">
-  <div class="section-title">Corrente AC (A)</div>
-  <canvas id="c-curr" height="110"></canvas>
-</div>
-<div class="section">
-  <div class="section-title">Temperatura (°C) &amp; Umidade (%)</div>
-  <canvas id="c-env" height="110"></canvas>
+<!-- ═══════════ CONFIGURAÇÕES ═══════════ -->
+<div id="page-config" class="page">
+
+  <div class="config-section">
+    <div class="config-title">Rede WiFi</div>
+
+    <div class="field">
+      <label>Nome da rede (SSID)</label>
+      <input type="text" id="cfg-ssid" placeholder="LoggerMTZ-7EAD01" maxlength="32" autocomplete="off" spellcheck="false">
+      <div class="field-hint">2 a 32 caracteres. Deixe vazio para manter o atual.</div>
+    </div>
+
+    <div class="field">
+      <label>Senha WiFi</label>
+      <div class="field-row">
+        <input type="password" id="cfg-pass" placeholder="mínimo 8 caracteres" maxlength="63" autocomplete="new-password">
+        <button class="toggle-pass" onclick="togglePass()" title="Mostrar/ocultar">👁</button>
+      </div>
+      <div class="field-hint">8 a 63 caracteres. Deixe vazio para manter a atual.</div>
+    </div>
+
+    <div class="config-actions">
+      <button class="btn btn-primary" id="btn-save" onclick="saveConfig()">💾 Salvar e Reiniciar</button>
+      <button class="btn" onclick="loadCurrentConfig()">↻ Carregar atual</button>
+    </div>
+    <div style="margin-top:10px;font-size:11px;color:var(--text3)">
+      ⚠ Ao salvar, o logger reinicia e a rede WiFi muda. Reconecte com as novas credenciais.
+    </div>
+  </div>
+
+  <div class="config-section">
+    <div class="config-title">Energia</div>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:12px">
+      Acumulado atual: <strong style="color:var(--pow)" id="cfg-kwh">—</strong> kWh
+    </p>
+    <button class="btn btn-danger" onclick="resetEnergy()">↺ Zerar acumulador de energia</button>
+  </div>
+
 </div>
 
-<footer id="footer">Conectando...</footer>
+</main>
+
+<div class="toast" id="toast"></div>
 
 <script>
-var data = [];
-var ws, pingTimer, uptimeStart;
+var data=[], ws, pingTimer, alertTimer=null;
+var sysinfo={};
 
-var COLORS = {
-  volt:'#f39c12', curr:'#2ecc71',
-  temp:'#e74c3c', hum:'#3498db'
-};
+// ── Tabs ──────────────────────────────────────────────────────
+function showTab(id,btn){
+  document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active')});
+  document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active')});
+  document.getElementById('page-'+id).classList.add('active');
+  btn.classList.add('active');
+  if(id==='info') loadSysinfo();
+  if(id==='config') loadCurrentConfig();
+}
 
-// ── WebSocket ────────────────────────────────────────────────
-function connect() {
-  ws = new WebSocket('ws://' + location.host + '/ws');
+// ── Toast ─────────────────────────────────────────────────────
+function toast(msg,type,dur){
+  var el=document.getElementById('toast');
+  el.textContent=msg;el.className='toast '+(type||'');el.classList.add('show');
+  setTimeout(function(){el.classList.remove('show')},dur||3000);
+}
 
-  ws.onopen = function() {
-    setDot(true);
-    uptimeStart = Date.now();
-    startPing();
-  };
+// ── Alertas ───────────────────────────────────────────────────
+var ALABEL={OVERCURRENT:'SOBRECORRENTE',UNDERVOLTAGE:'SUBTENSÃO',OVERVOLTAGE:'SOBRETENSÃO',IMBALANCE:'DESEQUILÍBRIO'};
 
-  ws.onmessage = function(e) {
-    var msg = JSON.parse(e.data);
-    if (msg.type === 'history') {
-      data = msg.data;
+function showAlert(msg){
+  var box=document.getElementById('alert-box');
+  var rows=document.getElementById('alert-rows');
+  var unit=(msg.code==='IMBALANCE')?'%':(msg.code.indexOf('VOLT')>=0?'V':'A');
+  var div=document.createElement('div');
+  div.className='alert-row';
+  div.textContent='⚠ '+(ALABEL[msg.code]||msg.code)+' — Fase '+msg.phase+' — '+Number(msg.value).toFixed(2)+unit;
+  rows.appendChild(div);
+  box.classList.add('show');
+  if(alertTimer)clearTimeout(alertTimer);
+  alertTimer=setTimeout(clearAlerts,30000);
+}
+
+function clearAlerts(){
+  var box=document.getElementById('alert-box');
+  box.classList.remove('show');
+  document.getElementById('alert-rows').innerHTML='';
+  if(alertTimer)clearTimeout(alertTimer);
+}
+
+// ── WebSocket ─────────────────────────────────────────────────
+function connect(){
+  ws=new WebSocket('ws://'+location.host+'/ws');
+
+  ws.onopen=function(){setDot(true);startPing()};
+
+  ws.onmessage=function(e){
+    var msg=JSON.parse(e.data);
+    if(msg.type==='history'){
+      data=msg.data||[];
+      if(msg.kwh!==undefined)updateEnergy(msg.kwh);
       refresh();
-    } else if (msg.type === 'reading') {
-      data.push({t:msg.t, h:msg.h, v:msg.v, c:msg.c, s:msg.s});
-      if (data.length > 200) data.shift();
-      updateCards(data[data.length-1]);
+    } else if(msg.type==='reading'){
+      data.push(msg);
+      if(data.length>200)data.shift();
+      updateCards(msg);
+      if(msg.kwh!==undefined)updateEnergy(msg.kwh);
       drawAll();
       updateFooter();
+    } else if(msg.type==='alert'){
+      showAlert(msg);
     }
   };
 
-  ws.onclose = function() {
-    setDot(false);
-    clearInterval(pingTimer);
-    setTimeout(connect, 3000);
-  };
-
-  ws.onerror = function() { ws.close(); };
+  ws.onclose=function(){setDot(false);clearInterval(pingTimer);setTimeout(connect,3000)};
+  ws.onerror=function(){ws.close()};
 }
 
-function startPing() {
-  pingTimer = setInterval(function() {
-    if (ws.readyState === WebSocket.OPEN) ws.send('ping');
-  }, 20000);
+function startPing(){
+  pingTimer=setInterval(function(){
+    if(ws.readyState===WebSocket.OPEN)ws.send('ping');
+  },20000);
 }
 
-// ── Status ───────────────────────────────────────────────────
-function setDot(on) {
-  var d = document.getElementById('dot');
-  d.className = 'dot ' + (on ? 'on' : 'off');
+// ── Status / Header ───────────────────────────────────────────
+function setDot(on){
+  document.getElementById('dot').className='dot '+(on?'on':'off');
 }
 
-function updateFooter() {
-  var n = data.length;
-  var last = data[n-1];
-  if (!last) return;
-  document.getElementById('footer').textContent =
-    n + ' leituras · última: T=' + last.t.toFixed(1) + '°C  V=' + last.v.toFixed(0) + 'V  I=' + last.c.toFixed(2) + 'A';
-}
-
-// Busca identidade do logger uma vez
-function fetchStatus() {
-  fetch('/api/status').then(function(r){return r.json();}).then(function(s) {
-    document.getElementById('title').textContent = s.ssid;
-    document.title = s.ssid;
+function fetchStatus(){
+  fetch('/api/sysinfo').then(function(r){return r.json()}).then(function(s){
+    sysinfo=s;
+    document.getElementById('hd-ssid').textContent=s.ssid;
+    document.getElementById('hd-serial').textContent='#'+s.serial;
+    document.title=s.ssid;
+    updateGenBadge(s.isGenerating);
+    updateEnergy(s.energyKwh);
     tickUptime(s.uptime);
   }).catch(function(){});
 }
 
-function tickUptime(baseSeconds) {
-  var base = Math.round(baseSeconds);
-  setInterval(function() {
-    base++;
-    var h = Math.floor(base / 3600);
-    var m = Math.floor((base % 3600) / 60);
-    var s = base % 60;
-    document.getElementById('uptime').textContent =
-      (h ? h + 'h ' : '') + (m ? m + 'm ' : '') + s + 's';
-  }, 1000);
+function tickUptime(base){
+  var b=Math.round(base);
+  setInterval(function(){
+    b++;
+    var h=Math.floor(b/3600),m=Math.floor((b%3600)/60),s=b%60;
+    var str=(h?h+'h ':'')+(m?m+'m ':'')+s+'s';
+    document.getElementById('hd-uptime').textContent=str;
+  },1000);
 }
 
-// ── Cards ────────────────────────────────────────────────────
-function updateCards(r) {
-  document.getElementById('v-temp').textContent = r.t.toFixed(1);
-  document.getElementById('v-hum').textContent  = r.h.toFixed(1);
-  document.getElementById('v-volt').textContent = r.v.toFixed(1);
-  document.getElementById('v-curr').textContent = r.c.toFixed(2);
+function updateGenBadge(gen){
+  var el=document.getElementById('badge-gen');
+  el.className=gen?'gen-on':'gen-off';
+  el.innerHTML='<span class="gen-dot"></span>'+(gen?'GERANDO':'AGUARDANDO');
 }
 
-function refresh() {
-  if (data.length > 0) updateCards(data[data.length-1]);
-  drawAll();
-  updateFooter();
-  fetchStatus();
+function updateEnergy(kwh){
+  var v=(kwh!==undefined)?Number(kwh).toFixed(2):'—';
+  document.getElementById('v-kwh').textContent=v;
+  document.getElementById('v-kwh2').textContent=v;
+  document.getElementById('cfg-kwh').textContent=v;
 }
 
-// ── Canvas charts ────────────────────────────────────────────
-function drawChart(id, datasets, colors) {
-  var canvas = document.getElementById(id);
-  if (!canvas) return;
+// ── Cards Painel ──────────────────────────────────────────────
+function updateCards(r){
+  var f1=function(v){return v!==undefined?Number(v).toFixed(1):'—'};
+  var f2=function(v){return v!==undefined?Number(v).toFixed(2):'—'};
+  document.getElementById('v-v1').textContent=f1(r.v1);
+  document.getElementById('v-v2').textContent=f1(r.v2);
+  document.getElementById('v-v3').textContent=f1(r.v3);
+  document.getElementById('v-i1').textContent=f1(r.i1);
+  document.getElementById('v-i2').textContent=f1(r.i2);
+  document.getElementById('v-i3').textContent=f1(r.i3);
+  document.getElementById('v-p1').textContent=f2(r.p1);
+  document.getElementById('v-p2').textContent=f2(r.p2);
+  document.getElementById('v-p3').textContent=f2(r.p3);
+  document.getElementById('v-total').textContent=f2(r.pt||r.pTotal);
+  document.getElementById('v-temp').textContent=f1(r.t||r.temp);
+  document.getElementById('v-hum').textContent=f1(r.h||r.humidity);
+  updateGenBadge(r.gen);
+}
 
-  var DPR = window.devicePixelRatio || 1;
-  var W = canvas.offsetWidth || 320;
-  var H = parseInt(canvas.getAttribute('height')) || 110;
-  canvas.width  = W * DPR;
-  canvas.height = H * DPR;
-  canvas.style.width  = W + 'px';
-  canvas.style.height = H + 'px';
+function refresh(){
+  if(data.length>0)updateCards(data[data.length-1]);
+  drawAll();updateFooter();fetchStatus();
+}
 
-  var ctx = canvas.getContext('2d');
-  ctx.scale(DPR, DPR);
+function updateFooter(){
+  var n=data.length;if(!n)return;
+  var last=data[n-1];
+  document.getElementById('footer').textContent=
+    n+' leituras · P: '+Number(last.pt||last.pTotal||0).toFixed(2)+' kVA'+
+    ' · T: '+Number(last.t||last.temp||0).toFixed(1)+'°C';
+}
 
-  var PL = 42, PR = 8, PT = 8, PB = 22;
-  var pw = W - PL - PR, ph = H - PT - PB;
+// ── Actions ───────────────────────────────────────────────────
+function resetEnergy(){
+  if(!confirm('Zerar o acumulador de energia?'))return;
+  fetch('/api/reset-energy',{method:'POST'}).then(function(r){return r.json()}).then(function(d){
+    updateEnergy(d.kwh);toast('Energia zerada','ok');
+  }).catch(function(){toast('Erro ao zerar','err')});
+}
 
-  ctx.clearRect(0, 0, W, H);
+// ── Página Informações ────────────────────────────────────────
+function fmtUptime(s){
+  var h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;
+  return (h?h+'h ':'')+(m?m+'m ':'')+sec+'s';
+}
 
-  // Sem dados
-  var hasData = datasets.some(function(d){ return d.length >= 2; });
-  if (!hasData) {
-    ctx.fillStyle = '#333';
-    ctx.font = '12px system-ui';
-    ctx.textAlign = 'center';
-    ctx.fillText('Aguardando dados...', W / 2, H / 2 + 4);
-    return;
+function loadSysinfo(){
+  fetch('/api/sysinfo').then(function(r){return r.json()}).then(function(s){
+    sysinfo=s;
+    document.getElementById('inf-model').textContent=s.model||'—';
+    document.getElementById('inf-version').textContent='v'+(s.version||'—');
+    document.getElementById('inf-serial').textContent=s.serial||'—';
+    document.getElementById('inf-uptime').textContent=fmtUptime(s.uptime||0);
+    document.getElementById('inf-heap').textContent=Math.round((s.heap||0)/1024)+' KB';
+    document.getElementById('inf-clients').textContent=(s.clients||0)+' conectado(s)';
+    document.getElementById('inf-readings').textContent=(s.readings||0)+' / 200';
+    document.getElementById('inf-ssid').textContent=s.ssid||'—';
+    document.getElementById('inf-ip').textContent=s.ip||'—';
+    var wsOn=ws&&ws.readyState===WebSocket.OPEN;
+    document.getElementById('inf-ws').textContent=wsOn?'Conectado':'Desconectado';
+    var badge=document.getElementById('inf-ws-badge');
+    badge.textContent=wsOn?'Online':'Offline';
+    badge.className='info-badge '+(wsOn?'badge-ok':'badge-warn');
+    document.getElementById('inf-db').textContent='Modo Autônomo (LittleFS)';
+    document.getElementById('inf-db-badge').textContent='Standalone';
+  }).catch(function(){toast('Erro ao carregar informações','err')});
+}
+
+function confirmRestart(){
+  if(!confirm('Reiniciar o logger agora?\nA conexão WiFi será interrompida por alguns segundos.'))return;
+  fetch('/api/restart',{method:'POST'}).then(function(){
+    toast('Reiniciando...','ok',5000);
+  }).catch(function(){toast('Erro','err')});
+}
+
+// ── Página Configurações ──────────────────────────────────────
+function loadCurrentConfig(){
+  fetch('/api/config').then(function(r){return r.json()}).then(function(c){
+    document.getElementById('cfg-ssid').placeholder=c.ssid||'—';
+    document.getElementById('cfg-pass').placeholder='senha atual (oculta)';
+  }).catch(function(){});
+}
+
+function togglePass(){
+  var el=document.getElementById('cfg-pass');
+  el.type=(el.type==='password')?'text':'password';
+}
+
+function saveConfig(){
+  var ssid=document.getElementById('cfg-ssid').value.trim();
+  var pass=document.getElementById('cfg-pass').value;
+
+  if(ssid&&ssid.length<2){toast('SSID mínimo 2 caracteres','err');return}
+  if(pass&&pass.length<8){toast('Senha mínima 8 caracteres','err');return}
+  if(!ssid&&!pass){toast('Preencha ao menos um campo','err');return}
+
+  // Usa valores atuais se campo vazio
+  var payload={
+    ssid:ssid||sysinfo.ssid||'LoggerMTZ',
+    password:pass||'mtz1234567_placeholder'
+  };
+
+  if(!pass){
+    // Não tem como recuperar a senha atual — informa o usuário
+    if(!confirm('Senha não alterada. Deseja continuar apenas mudando o SSID?\n\nATENÇÃO: Se você não souber a senha atual, precisará reprogramar o firmware.'))return;
+    payload.password=document.getElementById('cfg-pass').placeholder||'mtz1234567';
   }
 
-  // Intervalo global
-  var allVals = [];
-  datasets.forEach(function(d){ allVals = allVals.concat(d); });
-  var lo = Math.min.apply(null, allVals);
-  var hi = Math.max.apply(null, allVals);
-  var pad = (hi - lo) * 0.12 || 1;
-  lo -= pad; hi += pad;
+  var btn=document.getElementById('btn-save');
+  btn.disabled=true;btn.textContent='Salvando...';
 
-  var N = datasets[0].length;
-  function toX(i) { return PL + (i / Math.max(N-1, 1)) * pw; }
-  function toY(v) { return PT + ph - ((v - lo) / (hi - lo)) * ph; }
-
-  // Eixo Y (grid)
-  ctx.lineWidth = 1;
-  for (var g = 0; g <= 3; g++) {
-    var frac = g / 3;
-    var yv   = hi - frac * (hi - lo);
-    var gy   = PT + frac * ph;
-
-    ctx.strokeStyle = '#1a1a30';
-    ctx.beginPath(); ctx.moveTo(PL, gy); ctx.lineTo(PL + pw, gy); ctx.stroke();
-
-    ctx.fillStyle = '#444';
-    ctx.font = '9px monospace';
-    ctx.textAlign = 'right';
-    ctx.fillText(yv.toFixed(1), PL - 3, gy + 3);
-  }
-
-  // Eixo X — timestamps (início e fim)
-  if (data.length >= 2) {
-    ctx.fillStyle = '#333';
-    ctx.font = '9px monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText(fmtTime(data[0].s), PL, H - 4);
-    ctx.textAlign = 'right';
-    ctx.fillText(fmtTime(data[N-1].s), PL + pw, H - 4);
-  }
-
-  // Cada dataset
-  datasets.forEach(function(vals, di) {
-    if (vals.length < 2) return;
-    var col = colors[di];
-
-    // Fill
-    ctx.beginPath();
-    vals.forEach(function(v, i) {
-      i === 0 ? ctx.moveTo(toX(i), toY(v)) : ctx.lineTo(toX(i), toY(v));
-    });
-    ctx.lineTo(toX(vals.length-1), PT + ph);
-    ctx.lineTo(toX(0), PT + ph);
-    ctx.closePath();
-    ctx.fillStyle = col + '20';
-    ctx.fill();
-
-    // Line
-    ctx.beginPath();
-    vals.forEach(function(v, i) {
-      i === 0 ? ctx.moveTo(toX(i), toY(v)) : ctx.lineTo(toX(i), toY(v));
-    });
-    ctx.strokeStyle = col;
-    ctx.lineWidth = 1.8;
-    ctx.lineJoin = 'round';
-    ctx.stroke();
-
-    // Ponto mais recente
-    var lx = toX(vals.length-1), ly = toY(vals[vals.length-1]);
-    ctx.beginPath();
-    ctx.arc(lx, ly, 3, 0, 2*Math.PI);
-    ctx.fillStyle = col;
-    ctx.fill();
+  fetch('/api/config',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(payload)
+  }).then(function(r){return r.json()}).then(function(d){
+    if(d.ok){
+      toast('Salvo! Reconecte ao novo WiFi em instantes.','ok',8000);
+    } else {
+      toast('Erro: '+(d.error||'desconhecido'),'err');
+    }
+  }).catch(function(){
+    toast('Logger reiniciou. Reconecte ao WiFi.','ok',8000);
+  }).finally(function(){
+    btn.disabled=false;btn.textContent='💾 Salvar e Reiniciar';
+    document.getElementById('cfg-ssid').value='';
+    document.getElementById('cfg-pass').value='';
   });
 }
 
-function drawAll() {
-  var volts = data.map(function(r){ return r.v; });
-  var currs = data.map(function(r){ return r.c; });
-  var temps = data.map(function(r){ return r.t; });
-  var hums  = data.map(function(r){ return r.h; });
+// ── Canvas charts ─────────────────────────────────────────────
+var CSS={l1:'#f59e0b',l2:'#3b82f6',l3:'#10b981',pow:'#a855f7',temp:'#ef4444',hum:'#3b82f6'};
 
-  drawChart('c-volt', [volts], [COLORS.volt]);
-  drawChart('c-curr', [currs], [COLORS.curr]);
-  drawChart('c-env',  [temps, hums], [COLORS.temp, COLORS.hum]);
+function drawChart(id,datasets,colors){
+  var cv=document.getElementById(id);if(!cv)return;
+  var DPR=window.devicePixelRatio||1;
+  var W=cv.offsetWidth||320,H=parseInt(cv.getAttribute('height'))||110;
+  cv.width=W*DPR;cv.height=H*DPR;
+  cv.style.width=W+'px';cv.style.height=H+'px';
+  var ctx=cv.getContext('2d');ctx.scale(DPR,DPR);
+
+  var PL=44,PR=8,PT=8,PB=22,pw=W-PL-PR,ph=H-PT-PB;
+  ctx.clearRect(0,0,W,H);
+
+  var hasData=datasets.some(function(d){return d.length>=2});
+  if(!hasData){
+    ctx.fillStyle='#334';ctx.font='12px system-ui';ctx.textAlign='center';
+    ctx.fillText('Aguardando dados...',W/2,H/2+4);return;
+  }
+
+  var allVals=[];datasets.forEach(function(d){allVals=allVals.concat(d)});
+  var lo=Math.min.apply(null,allVals),hi=Math.max.apply(null,allVals);
+  var pad=(hi-lo)*0.12||1;lo-=pad;hi+=pad;
+  var N=datasets[0].length;
+  function toX(i){return PL+(i/Math.max(N-1,1))*pw}
+  function toY(v){return PT+ph-((v-lo)/(hi-lo))*ph}
+
+  // Grid
+  for(var g=0;g<=3;g++){
+    var frac=g/3,yv=hi-frac*(hi-lo),gy=PT+frac*ph;
+    ctx.strokeStyle='#1a1a32';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(PL,gy);ctx.lineTo(PL+pw,gy);ctx.stroke();
+    ctx.fillStyle='#445';ctx.font='9px monospace';ctx.textAlign='right';
+    ctx.fillText(yv.toFixed(1),PL-3,gy+3);
+  }
+
+  // Timestamps
+  if(data.length>=2){
+    ctx.fillStyle='#334';ctx.font='9px monospace';
+    ctx.textAlign='left';ctx.fillText(fmtT(data[0].s),PL,H-4);
+    ctx.textAlign='right';ctx.fillText(fmtT(data[N-1].s),PL+pw,H-4);
+  }
+
+  // Linhas
+  datasets.forEach(function(vals,di){
+    if(vals.length<2)return;
+    var col=colors[di];
+    ctx.beginPath();
+    vals.forEach(function(v,i){i===0?ctx.moveTo(toX(i),toY(v)):ctx.lineTo(toX(i),toY(v))});
+    ctx.lineTo(toX(vals.length-1),PT+ph);ctx.lineTo(toX(0),PT+ph);ctx.closePath();
+    ctx.fillStyle=col+'14';ctx.fill();
+    ctx.beginPath();
+    vals.forEach(function(v,i){i===0?ctx.moveTo(toX(i),toY(v)):ctx.lineTo(toX(i),toY(v))});
+    ctx.strokeStyle=col;ctx.lineWidth=1.8;ctx.lineJoin='round';ctx.stroke();
+    var lx=toX(vals.length-1),ly=toY(vals[vals.length-1]);
+    ctx.beginPath();ctx.arc(lx,ly,3,0,2*Math.PI);ctx.fillStyle=col;ctx.fill();
+  });
 }
 
-function fmtTime(s) {
-  var d = new Date(s * 1000);
-  var hh = String(d.getUTCHours()).padStart(2,'0');
-  var mm = String(d.getUTCMinutes()).padStart(2,'0');
-  var ss = String(d.getUTCSeconds()).padStart(2,'0');
-  return hh + ':' + mm + ':' + ss;
+function drawAll(){
+  if(!data.length)return;
+  var v1s=[],v2s=[],v3s=[],i1s=[],i2s=[],i3s=[],pts=[],tmps=[],hums=[];
+  data.forEach(function(r){
+    v1s.push(r.v1||0);v2s.push(r.v2||0);v3s.push(r.v3||0);
+    i1s.push(r.i1||0);i2s.push(r.i2||0);i3s.push(r.i3||0);
+    pts.push(r.pt||r.pTotal||0);
+    tmps.push(r.t||r.temp||0);hums.push(r.h||r.humidity||0);
+  });
+  drawChart('c-volt',[v1s,v2s,v3s],[CSS.l1,CSS.l2,CSS.l3]);
+  drawChart('c-curr',[i1s,i2s,i3s],[CSS.l1,CSS.l2,CSS.l3]);
+  drawChart('c-pow', [pts],        [CSS.pow]);
+  drawChart('c-env', [tmps,hums],  [CSS.temp,CSS.hum]);
 }
 
-window.addEventListener('resize', drawAll);
+function fmtT(s){
+  var d=new Date(s*1000);
+  return String(d.getUTCHours()).padStart(2,'0')+':'+
+         String(d.getUTCMinutes()).padStart(2,'0')+':'+
+         String(d.getUTCSeconds()).padStart(2,'0');
+}
+
+window.addEventListener('resize',drawAll);
 connect();
 </script>
 </body>
